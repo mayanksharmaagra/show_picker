@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'HomeScreen.dart';
+import 'SavedPicksScreen.dart';
 import 'SplashScreen.dart';
 
 final appRouter = GoRouter(
@@ -25,6 +26,10 @@ final appRouter = GoRouter(
         },
         transitionDuration: const Duration(milliseconds: 400),
       ),
+    ),
+    GoRoute(
+      path: '/saved',
+      builder: (context, state) => const SavedPicksScreen(),
     ),
   ],
 );

@@ -1,4 +1,14 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:show_picker/screen/SuggestionScreen.dart';
+
+import '../ai/Claude_Service.dart';
+import '../ai/gemini_service.dart';
+import '../ai/tmdb_service.dart';
+import '../data/Suggestion.dart';
+import 'AppUtils.dart';
 
 // ─── Mood Model ──────────────────────────────────────────────────────────────
 
@@ -14,94 +24,6 @@ class MoodItem {
   });
 }
 
-// ─── Moods Data ──────────────────────────────────────────────────────────────
-
-const List<MoodItem> kMoods = [
-  MoodItem(
-    emoji: '😄',
-    // Big smile — genuinely happy/cheerful
-    label: 'Happy',
-    subtitle: 'Feel-good & fun',
-  ),
-  MoodItem(
-    emoji: '😱',
-    // Screaming face — edge-of-seat thrilling
-    label: 'Thrilling',
-    subtitle: 'Edge of your seat',
-  ),
-  MoodItem(
-    emoji: '💕',
-    // Two hearts — romantic mood
-    label: 'Romantic',
-    subtitle: 'Love is in the air',
-  ),
-  MoodItem(
-    emoji: '👻',
-    // Ghost — scary/horror mood
-    label: 'Scary',
-    subtitle: 'Spine-chilling horror',
-  ),
-  MoodItem(
-    emoji: '😂',
-    // Laughing tears — genuinely funny
-    label: 'Funny',
-    subtitle: 'Laugh out loud',
-  ),
-  MoodItem(
-    emoji: '😢',
-    // Crying face — emotional/sad mood
-    label: 'Emotional',
-    subtitle: 'Touch your heart',
-  ),
-  MoodItem(
-    emoji: '🤯',
-    // Mind blown — thought-provoking, twists
-    label: 'Mind-bending',
-    subtitle: 'Plot twists & mystery',
-  ),
-  MoodItem(
-    emoji: '😴',
-    // Sleepy — light, easy background watch
-    label: 'Chill',
-    subtitle: 'Easy background watch',
-  ),
-  MoodItem(
-    emoji: '🤩',
-    // Star eyes — inspired, uplifting content
-    label: 'Inspired',
-    subtitle: 'Motivating & uplifting',
-  ),
-  MoodItem(
-    emoji: '😤',
-    // Determined face — action-packed, intense
-    label: 'Action-packed',
-    subtitle: 'High-octane energy',
-  ),
-  MoodItem(
-    emoji: '🧐',
-    // Monocle — curious, documentary, learn
-    label: 'Curious',
-    subtitle: 'Documentaries & facts',
-  ),
-  MoodItem(
-    emoji: '🥳',
-    // Party face — celebratory, festive mood
-    label: 'Celebratory',
-    subtitle: 'Party & festive vibes',
-  ),
-];
-
-const List<String> kGenres = [
-  'Action',
-  'Comedy',
-  'Drama',
-  'Sci-Fi',
-  'Horror',
-  'Romance',
-  'Documentary',
-  'Animation',
-  'Thriller',
-];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -113,7 +35,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   String? _selectedLabel;
   String? _selectedGenre;
+  String? _selectedLanguage;
   double _duration = 120; // default 120 mins
+  final _claudeService = ClaudeService();
+  final _geminiService = GeminiService();
+  final _tmdbService = TmdbService();
+
+  bool _isLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -130,7 +58,17 @@ class _HomeScreenState extends State<HomeScreen> {
                   _titleBar(),
                   _showMoodsTypes(),
                   _genreType(),
+                  _languageSelector(),
                   _buildDurationSlider(),
+                  if (_errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   _buildFindButton(),
                 ],
               ),
@@ -145,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       color: Color(0xff10131A),
       child: Padding(
-        padding: EdgeInsets.only(left: 10, top: 60, bottom: 10, right: 5),
+        padding: EdgeInsets.only(left: 10, top: 60, bottom: 10, right: 15),
         // all sides
         child: Row(
           children: [
@@ -164,6 +102,15 @@ class _HomeScreenState extends State<HomeScreen> {
               "assets/images/flicker_star.png",
               width: 15,
               height: 15,
+            ),
+            const Spacer(),
+            IconButton(
+              onPressed: () => context.push('/saved'),
+              icon: const Icon(
+                Icons.bookmarks_outlined,
+                color: Colors.white,
+                size: 24,
+              ),
             ),
           ],
         ),
@@ -255,6 +202,75 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _languageSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: const Text(
+            "Language",
+            style: TextStyle(
+              fontSize: 16,
+              color: Color(0xff94A3B8),
+              letterSpacing: 0.1,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 8, // horizontal gap between chips
+            runSpacing: 10, // vertical gap between rows
+            children: kLanguages.map((language) {
+              final isSelected = _selectedLanguage == language;
+              return GestureDetector(
+                onTap: () => setState(() {
+                  _selectedLanguage = _selectedLanguage == language
+                      ? null
+                      : language;
+                }),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? const Color(0xff3B82F6)
+                        : const Color(0xff1E293B),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xff3B82F6)
+                          : const Color(0xff334155),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    language,
+                    style: TextStyle(
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xff94A3B8),
+                      fontSize: 14,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 30),
+      ],
+    );
+  }
+
   Widget _genreType() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -323,7 +339,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFindButton() {
-    final bool canSearch = _selectedLabel != null || _selectedGenre != null;
+    final bool canSearch =
+        _selectedLabel != null ||
+        _selectedGenre != null ||
+        _selectedLanguage != null;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       child: AnimatedOpacity(
@@ -353,11 +372,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Colors.transparent, // keeps gradient visible
             borderRadius: BorderRadius.circular(16),
             child: InkWell(
-              onTap: canSearch
-                  ? () {
-                      print("${_selectedLabel!}, ${_selectedGenre!}");
-                    }
-                  : null,
+              onTap: canSearch && !_isLoading ? _onFindTapped : null,
               borderRadius: BorderRadius.circular(16),
               // ripple clips to border
               splashColor: Colors.white.withOpacity(0.15),
@@ -366,15 +381,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: double.infinity,
                 height: 52,
                 child: Center(
-                  child: Text(
-                    '✨ Find Me Something!',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: canSearch ? Colors.white : const Color(0xFF94A3B8),
-                      letterSpacing: 1.1,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          '✨ Find Me Something!',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: canSearch ? Colors.white : const Color(0xFF94A3B8),
+                            letterSpacing: 1.1,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -449,17 +473,11 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   '30m',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF475569),
-                  ),
+                  style: TextStyle(fontSize: 11, color: Color(0xFF475569)),
                 ),
                 Text(
                   '180m',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF475569),
-                  ),
+                  style: TextStyle(fontSize: 11, color: Color(0xFF475569)),
                 ),
               ],
             ),
@@ -467,6 +485,89 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _onFindTapped() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // 1. Read API keys
+      const geminiKey = ""; // Replace with your actual Gemini Key
+      const tmdbKey = "";
+
+      // 2. Gemini returns 20 suggestions
+      final allSuggestions = await _geminiService.getSuggestionsDummy(
+        apiKey: geminiKey,
+        mood: _selectedLabel ?? 'Happy',
+        genre: _selectedGenre ?? 'Any',
+        language: _selectedLanguage ?? 'Any',
+        maxDuration: _duration.toInt(),
+      );
+
+      // 3. TMDB enrichment for the first 5 items
+      final firstBatch = await Future.wait(
+        allSuggestions.take(5).map((s) =>
+            _tmdbService.enrichSuggestion(s, tmdbKey)),
+      );
+      //i want to print poster url in log
+      for(int i=0;i<firstBatch.length;i++){
+        print("${firstBatch[i].poster_path} ====== ${firstBatch[i].title}");
+      }
+
+      // 4. Navigate with all results
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => SuggestionScreen(
+              loaded: firstBatch, // enriched, show now
+              remaining: allSuggestions.skip(5).toList(), // raw, enrich later
+              tmdbKey: tmdbKey,
+              mood: _selectedLabel,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      log("Error fetching suggestions: $e");
+      setState(() => _errorMessage = "Oops! Something went wrong. Please try again.");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// Enriches suggestions in batches to avoid TMDB rate limits
+  Future<List<Suggestion>> _enrichInBatches(
+    List<Suggestion> suggestions,
+    String tmdbKey, {
+    int batchSize = 5,
+  }) async {
+    final results = <Suggestion>[];
+
+    for (int i = 0; i < suggestions.length; i += batchSize) {
+      final batch = suggestions.sublist(
+        i,
+        (i + batchSize).clamp(0, suggestions.length),
+      );
+
+      // Run batch in parallel
+      final batchResults = await Future.wait(
+        batch.map((s) => _tmdbService.enrichSuggestion(s, tmdbKey)),
+      );
+
+      results.addAll(batchResults);
+
+      // Small delay between batches — prevents TMDB 429 rate limit
+      if (i + batchSize < suggestions.length) {
+        await Future.delayed(const Duration(milliseconds: 300));
+      }
+    }
+
+    return results;
   }
 }
 
@@ -549,6 +650,7 @@ class _MoodCard extends StatelessWidget {
     );
   }
 }
+
 class _GlowingThumbShape extends SliderComponentShape {
   @override
   Size getPreferredSize(bool isEnabled, bool isDiscrete) {
@@ -557,19 +659,19 @@ class _GlowingThumbShape extends SliderComponentShape {
 
   @override
   void paint(
-      PaintingContext context,
-      Offset center, {
-        required Animation<double> activationAnimation,
-        required Animation<double> enableAnimation,
-        required bool isDiscrete,
-        required TextPainter labelPainter,
-        required RenderBox parentBox,
-        required SliderThemeData sliderTheme,
-        required TextDirection textDirection,
-        required double value,
-        required double textScaleFactor,
-        required Size sizeWithOverflow,
-      }) {
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
     final canvas = context.canvas;
 
     // Outer glow ring (blue)
@@ -591,17 +693,9 @@ class _GlowingThumbShape extends SliderComponentShape {
     );
 
     // White center circle
-    canvas.drawCircle(
-      center,
-      9,
-      Paint()..color = Colors.white,
-    );
+    canvas.drawCircle(center, 9, Paint()..color = Colors.white);
 
     // Blue inner dot
-    canvas.drawCircle(
-      center,
-      4,
-      Paint()..color = const Color(0xFF3B82F6),
-    );
+    canvas.drawCircle(center, 4, Paint()..color = const Color(0xFF3B82F6));
   }
 }
